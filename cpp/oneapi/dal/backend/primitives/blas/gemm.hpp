@@ -22,6 +22,15 @@ namespace oneapi::dal::backend::primitives {
 
 #ifdef ONEDAL_DATA_PARALLEL
 
+template <ndorder ao, ndorder bo, ndorder co>
+sycl::event gemm_bf16(sycl::queue& queue,
+                 const ndview<std::uint16_t, 2, ao>& a,
+                 const ndview<std::uint16_t, 2, bo>& b,
+                 ndview<float, 2, co>& c,
+                 float alpha = float(1),
+                 float beta = float(0),
+                 const event_vector& deps = {});
+
 template <typename Float, ndorder ao, ndorder bo, ndorder co>
 sycl::event gemm(sycl::queue& queue,
                  const ndview<Float, 2, ao>& a,

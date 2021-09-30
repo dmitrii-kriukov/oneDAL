@@ -200,6 +200,40 @@ sycl::event kernels_fp<Float>::select(sycl::queue& queue,
     return event;
 }
 
+template <pr::ndorder ao, pr::ndorder bo, pr::ndorder co>
+sycl::event gemm_control(sycl::queue& queue,
+                 const pr::ndview<float, 2, ao>& data_block,
+                 const pr::ndview<float, 2, bo>& centroids,
+                 pr::ndview<float, 2, co>& distance_block,
+                 const bk::event_vector& deps) {
+    auto dst_data_block = pr::ndarray<std::uint16_t, 2>::empty(queue, data_block.get_shape(), sycl::usm::alloc::device);
+    auto data_view = pr::ndview<std::uint16_t, 2>::wrap(dst_data_block.get_mutable_data(), dst_data_block.get_shape());
+    pr::f32_to_bf16(queue, data_block, data_view).wait_and_throw();
+    auto dst_centroids = pr::ndarray<std::uint16_t, 2>::empty(queue, centroids.get_shape(), sycl::usm::alloc::device);
+    auto centroids_view = pr::ndview<std::uint16_t, 2>::wrap(dst_centroids.get_mutable_data(), dst_centroids.get_shape());
+    pr::f32_to_bf16(queue, centroids, centroids_view).wait_and_throw();
+    return pr::gemm_bf16(queue, data_view,
+                        centroids_view.t(),
+                        distance_block,
+                        float(-2.0),
+                        float(0.0),
+                        deps);
+}
+
+template <pr::ndorder ao, pr::ndorder bo, pr::ndorder co>
+sycl::event gemm_control(sycl::queue& queue,
+                 const pr::ndview<double, 2, ao>& data_block,
+                 const pr::ndview<double, 2, bo>& centroids,
+                 pr::ndview<double, 2, co>& distance_block,
+                 const bk::event_vector& deps) {
+    return pr::gemm(queue, data_block,
+                    centroids.t(),
+                    distance_block,
+                    double(-2.0),
+                    double(0.0),
+                    deps);
+}
+
 template <typename Float>
 sycl::event kernels_fp<Float>::assign_clusters(sycl::queue& queue,
                                                const pr::ndview<Float, 2>& data,
@@ -232,13 +266,11 @@ sycl::event kernels_fp<Float>::assign_clusters(sycl::queue& queue,
             pr::ndview<Float, 2>::wrap(distances.get_mutable_data(), { cur_rows, centroid_count });
         auto data_block = pr::ndview<Float, 2>::wrap(data.get_data() + row_offset * column_count,
                                                      { cur_rows, column_count });
-        auto distance_event = pr::gemm(queue,
-                                       data_block,
-                                       centroids.t(),
-                                       distance_block,
-                                       Float(-2.0),
-                                       Float(0.0),
-                                       { selection_event });
+        auto distance_event = gemm_control(queue,
+                                    data_block,
+                                    centroids.t(),
+                                    distance_block,
+                                    { selection_event });
         auto response_block =
             pr::ndview<int32_t, 2>::wrap(responses.get_mutable_data() + row_offset,
                                          { cur_rows, 1 });

@@ -421,6 +421,22 @@ sycl::event fill(sycl::queue& q,
     }
     return res_event;
 }
+
+template <ndorder ord1, ndorder ord2>
+sycl::event f32_to_bf16(sycl::queue& queue, const ndview<float, 2, ord1>& src, ndview<std::uint16_t, 2, ord2>& dst) {
+    ONEDAL_ASSERT(src.has_data());
+    ONEDAL_ASSERT(dst.has_mutable_data());
+
+    std::uint16_t* dst_ptr = dst.get_mutable_data();
+    std::uint64_t dst_count = dst.get_count();
+    const uint16_t* src_ptr = reinterpret_cast<const uint16_t *>(src.get_data());
+
+    return queue.submit([&](sycl::handler& cgh) {
+        cgh.parallel_for(make_range_1d(dst_count), [=](sycl::id<1> idx) {
+            dst_ptr[idx] = src_ptr[2*idx + 1];
+        });
+    });
+}
 #endif
 
 template <typename T, std::int64_t axis_count, ndorder order = ndorder::c>

@@ -29,6 +29,56 @@ inline constexpr mkl::transpose c_order_as_transposed(ndorder order) {
     return (order == ndorder::c) ? mkl::transpose::trans : mkl::transpose::nontrans;
 }
 
+template <ndorder ao, ndorder bo, ndorder co>
+sycl::event gemm_bf16(sycl::queue& queue,
+                 const ndview<std::uint16_t, 2, ao>& a,
+                 const ndview<std::uint16_t, 2, bo>& b,
+                 ndview<float, 2, co>& c,
+                 float alpha,
+                 float beta,
+                 const event_vector& deps) {
+    ONEDAL_ASSERT(a.get_dimension(0) == c.get_dimension(0));
+    ONEDAL_ASSERT(a.get_dimension(1) == b.get_dimension(0));
+    ONEDAL_ASSERT(b.get_dimension(1) == c.get_dimension(1));
+    ONEDAL_ASSERT(c.has_mutable_data());
+
+    constexpr bool is_c_trans = (co == ndorder::c);
+    if constexpr (is_c_trans) {
+        return mkl::blas::gemm(queue,
+                               f_order_as_transposed(bo),
+                               f_order_as_transposed(ao),
+                               c.get_dimension(1),
+                               c.get_dimension(0),
+                               a.get_dimension(1),
+                               alpha,
+                               reinterpret_cast<const mkl::bfloat16 *>(b.get_data()),
+                               b.get_leading_stride(),
+                               reinterpret_cast<const mkl::bfloat16 *>(a.get_data()),
+                               a.get_leading_stride(),
+                               beta,
+                               c.get_mutable_data(),
+                               c.get_leading_stride(),
+                               deps);
+    }
+    else {
+        return mkl::blas::gemm(queue,
+                               c_order_as_transposed(ao),
+                               c_order_as_transposed(bo),
+                               c.get_dimension(0),
+                               c.get_dimension(1),
+                               a.get_dimension(1),
+                               alpha,
+                               reinterpret_cast<const mkl::bfloat16 *>(a.get_data()),
+                               a.get_leading_stride(),
+                               reinterpret_cast<const mkl::bfloat16 *>(b.get_data()),
+                               b.get_leading_stride(),
+                               beta,
+                               c.get_mutable_data(),
+                               c.get_leading_stride(),
+                               deps);
+    }
+}
+
 template <typename Float, ndorder ao, ndorder bo, ndorder co>
 sycl::event gemm(sycl::queue& queue,
                  const ndview<Float, 2, ao>& a,
@@ -88,6 +138,15 @@ sycl::event gemm(sycl::queue& queue,
                                                            F beta,                    \
                                                            const event_vector& deps);
 
+#define INSTANTIATE_BF(ao, bo, co)                                                    \
+    template ONEDAL_EXPORT sycl::event gemm_bf16<ao, bo, co>(sycl::queue & queue,       \
+                                                           const ndview<std::uint16_t, 2, ao>& a, \
+                                                           const ndview<std::uint16_t, 2, bo>& b, \
+                                                           ndview<float, 2, co>& c,       \
+                                                           float alpha,                   \
+                                                           float beta,                    \
+                                                           const event_vector& deps);
+
 #define INSTANTIATE_FLOAT(ao, bo, co) \
     INSTANTIATE(float, ao, bo, co)    \
     INSTANTIATE(double, ao, bo, co)
@@ -101,4 +160,12 @@ INSTANTIATE_FLOAT(ndorder::f, ndorder::c, ndorder::f)
 INSTANTIATE_FLOAT(ndorder::f, ndorder::f, ndorder::c)
 INSTANTIATE_FLOAT(ndorder::f, ndorder::f, ndorder::f)
 
+INSTANTIATE_BF(ndorder::c, ndorder::c, ndorder::c)
+INSTANTIATE_BF(ndorder::c, ndorder::c, ndorder::f)
+INSTANTIATE_BF(ndorder::c, ndorder::f, ndorder::c)
+INSTANTIATE_BF(ndorder::c, ndorder::f, ndorder::f)
+INSTANTIATE_BF(ndorder::f, ndorder::c, ndorder::c)
+INSTANTIATE_BF(ndorder::f, ndorder::c, ndorder::f)
+INSTANTIATE_BF(ndorder::f, ndorder::f, ndorder::c)
+INSTANTIATE_BF(ndorder::f, ndorder::f, ndorder::f)
 } // namespace oneapi::dal::backend::primitives
