@@ -200,24 +200,20 @@ sycl::event kernels_fp<Float>::select(sycl::queue& queue,
     return event;
 }
 
-template <pr::ndorder ao, pr::ndorder bo, pr::ndorder co>
+template <pr::ndorder ord1, pr::ndorder ord2, pr::ndorder ord3>
 sycl::event gemm_control(sycl::queue& queue,
-                 const pr::ndview<float, 2, ao>& data_block,
-                 const pr::ndview<float, 2, bo>& centroids,
-                 pr::ndview<float, 2, co>& distance_block,
+                 const pr::ndview<float, 2, ord1>& data_block,
+                 const pr::ndview<float, 2, ord2>& centroids,
+                 pr::ndview<float, 2, ord3>& distance_block,
                  const bk::event_vector& deps) {
-    auto dst_data_block = pr::ndarray<std::uint16_t, 2>::empty(queue, data_block.get_shape(), sycl::usm::alloc::device);
-    auto data_view = pr::ndview<std::uint16_t, 2>::wrap(dst_data_block.get_mutable_data(), dst_data_block.get_shape());
-    pr::f32_to_bf16(queue, data_block, data_view).wait_and_throw();
-    auto dst_centroids = pr::ndarray<std::uint16_t, 2>::empty(queue, centroids.get_shape(), sycl::usm::alloc::device);
-    auto centroids_view = pr::ndview<std::uint16_t, 2>::wrap(dst_centroids.get_mutable_data(), dst_centroids.get_shape());
-    pr::f32_to_bf16(queue, centroids, centroids_view).wait_and_throw();
+    auto [data_view, data_conv_event] = pr::f32_to_bf16(queue, data_block, deps);
+    auto [centroids_view, centroids_conv_event] = pr::f32_to_bf16(queue, centroids, deps);
     return pr::gemm_bf16(queue, data_view,
                         centroids_view.t(),
                         distance_block,
                         float(-2.0),
                         float(0.0),
-                        deps);
+                        {data_conv_event, centroids_conv_event});
 }
 
 template <pr::ndorder ao, pr::ndorder bo, pr::ndorder co>
@@ -266,11 +262,29 @@ sycl::event kernels_fp<Float>::assign_clusters(sycl::queue& queue,
             pr::ndview<Float, 2>::wrap(distances.get_mutable_data(), { cur_rows, centroid_count });
         auto data_block = pr::ndview<Float, 2>::wrap(data.get_data() + row_offset * column_count,
                                                      { cur_rows, column_count });
+                                                     
+        // auto [test, test_event] = pr::f32_to_bf16(queue, data_block, deps);
+        // test_event.wait_and_throw();
+
+        // auto expect = pr::ndarray<float, 2>::empty(queue, data_block.get_shape(), sycl::usm::alloc::device);
+        // auto expect_view = pr::ndview<float, 2>::wrap(expect.get_mutable_data(), expect.get_shape());
+        // copy(queue, expect_view, data_block).wait_and_throw();
+
+        // auto expect_ptr = expect.to_host(queue).get_data();
+        // auto test_ptr = test.to_host(queue).get_data();
+
+        // for(int64_t i = 0; i < test.get_count() && i < 5; i++) {
+        //     const std::uint32_t* val_32b = reinterpret_cast<const std::uint32_t*>(&(expect_ptr[i]));
+        //     std::cout << i << ":\nfloat: "<< std::bitset<32>(*val_32b) << " bfloat16: "<< std::bitset<16>(test_ptr[i]) << "\n"
+        //     << "float: "<< expect_ptr[i] << " bfloat16: "<< test_ptr[i] << "\n";
+        // }
+
         auto distance_event = gemm_control(queue,
                                     data_block,
                                     centroids.t(),
                                     distance_block,
                                     { selection_event });
+
         auto response_block =
             pr::ndview<int32_t, 2>::wrap(responses.get_mutable_data() + row_offset,
                                          { cur_rows, 1 });
