@@ -19,6 +19,7 @@
 #include "oneapi/dal/array.hpp"
 #include "oneapi/dal/backend/memory.hpp"
 #include "oneapi/dal/backend/primitives/ndshape.hpp"
+#include "oneapi/dal/detail/profiler.hpp"
 
 namespace oneapi::dal::backend::primitives {
 
@@ -778,6 +779,7 @@ private:
 
 template <ndorder ord1>
 auto f32_to_bf16(sycl::queue& queue, const ndview<float, 2, ord1>& src, const event_vector& deps = {}) {
+    ONEDAL_PROFILER_TASK(f32_to_bf16, queue);
     ONEDAL_ASSERT(src.has_data());
 
     auto dst = ndarray<std::uint16_t, 2, ord1>::empty(queue, src.get_shape(), sycl::usm::alloc::device);
@@ -793,14 +795,9 @@ auto f32_to_bf16(sycl::queue& queue, const ndview<float, 2, ord1>& src, const ev
         });
     });
 
-    return std::make_tuple(dst_array, res_event);
+    return std::make_tuple(dst, res_event);
 }
 
-// template <ndorder ord1>
-// auto f32_to_bf16(sycl::queue& queue, const ndview<double, 2, ord1>& src, const event_vector& deps = {}) {
-//     auto dst_array = ndarray<std::uint16_t, 2, ord1>::empty(queue, src.get_shape(), sycl::usm::alloc::device);
-//     return std::make_tuple(dst_array, sycl::event()); 
-// }
-// #endif
+ #endif
 
 } // namespace oneapi::dal::backend::primitives
