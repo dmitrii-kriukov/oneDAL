@@ -952,7 +952,7 @@ $(JNI.tmpdir)/%.res: %.rc | $(JNI.tmpdir)/. ; $(RC.COMPILE)
 daal: $(if $(CORE.ALGORITHMS.CUSTOM),           \
           _daal _release_c,                     \
           _daal _daal_jj _release _release_doc  \
-      );-rm -f $(RELEASEDIR.libia)/$(thr_seq_y)*;-rm -f $(RELEASEDIR.libia)/$(thr_seq_a)
+      );-rm -f $(RELEASEDIR.libia)/$(thr_seq_y)*;rm -f $(RELEASEDIR.libia)/$(thr_seq_a)
 daal_c: _daal _release_c
 
 oneapi: oneapi_c oneapi_dpc
